@@ -79,7 +79,7 @@ void app_main(void)
 		  }
 	  }*/
 	  //TFT9341_SetRotation(spi, 0);
-	//uint16_t a = 15;
+	uint16_t a = 15;
 	line_arr[0].x1 = 15;
 	for(int i = 0; i < 60; i++){
 		line_arr[i].x2 = (line_arr[i].x1 + 5);
