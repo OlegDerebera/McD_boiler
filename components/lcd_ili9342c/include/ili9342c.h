@@ -18,19 +18,21 @@ static spi_device_handle_t spi;
 //---------------------------------------------------------------------
 #define swap(a,b) {int16_t t=a;a=b;b=t;}
 //---------------------------------------------------------------------
-#define TFT9341_MADCTL_MY  0x80
-#define TFT9341_MADCTL_MX  0x40
-#define TFT9341_MADCTL_MV  0x20
-#define TFT9341_MADCTL_ML  0x10
-#define TFT9341_MADCTL_RGB 0x00
-#define TFT9341_MADCTL_BGR 0x08
-#define TFT9341_MADCTL_MH  0x04
-#define TFT9341_BLACK   0x0000
-#define TFT9341_BLUE    0x001F
-#define TFT9341_RED     0xF800
-#define TFT9341_GREEN   0x07E0
-#define TFT9341_CYAN    0x07FF
-#define TFT9341_MAGENTA 0xF81F
+#define TFT9341_MADCTL_MY  		0x80
+#define TFT9341_MADCTL_MX  		0x40
+#define TFT9341_MADCTL_MV 		0x20
+#define TFT9341_MADCTL_ML  		0x10
+#define TFT9341_MADCTL_RGB		0x00
+#define TFT9341_MADCTL_BGR 		0x08
+#define TFT9341_MADCTL_MH  		0x04
+#define TFT9341_BLACK 			0x0000
+#define TFT9341_BLUE   		 	0x001F
+#define TFT9341_RED    		 	0xF800
+#define TFT9341_GREEN   		0x07E0
+#define TFT9341_GREEN_2			0x0e41
+#define TFT9341_CYAN    		0x07FF
+#define TFT9341_MAGENTA 		0xF81F
+#define TFT9341_ORANGE	 		0xFE40
 #define TFT9341_YELLOW  0xFFE0
 #define TFT9341_WHITE   0xFFFF
 #define CONFIG_PIN_NUM_MOSI 23
