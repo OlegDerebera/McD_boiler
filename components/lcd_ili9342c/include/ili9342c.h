@@ -58,6 +58,9 @@ void TFT9341_DrawChar(spi_device_handle_t spi, uint16_t x, uint16_t y, uint8_t c
 void TFT9341_String(spi_device_handle_t spi, uint16_t x,uint16_t y, char *str);
 void TFT9341_SetRotation(spi_device_handle_t spi, uint8_t r);
 void TFT9341_ini(spi_device_handle_t spi, uint16_t w_size, uint16_t h_size);
+void TFT9341_SetAddrWindow(spi_device_handle_t spi, uint16_t x0,
+		uint16_t y0, uint16_t x1, uint16_t y1);
+
 //void TFT9341_spi_init(void);
 //void lcd_spi_pre_transfer_callback(spi_transaction_t *t);
 //---------------------------------------------------------------------

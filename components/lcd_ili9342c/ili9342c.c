@@ -155,7 +155,7 @@ void TFT9341_FillScreen(spi_device_handle_t spi, uint16_t color)
    heap_caps_free(blck);
 }
 //-------------------------------------------------------------------
-/*void TFT9341_FillRect(spi_device_handle_t spi, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
+void TFT9341_FillRect(spi_device_handle_t spi, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
 {
   if((x1 >= TFT9341_WIDTH) || (y1 >= TFT9341_HEIGHT) || (x2 >= TFT9341_WIDTH) || (y2 >= TFT9341_HEIGHT)) return;
   if(x1>x2) swap(x1,x2);
@@ -201,7 +201,7 @@ void TFT9341_FillScreen(spi_device_handle_t spi, uint16_t color)
     }
   }
   heap_caps_free(blck);
-}*/
+}
 //-------------------------------------------------------------------
 static void TFT9341_WriteData(spi_device_handle_t spi, uint8_t* buff, size_t buff_size) {
   esp_err_t ret;
@@ -220,7 +220,7 @@ static void TFT9341_WriteData(spi_device_handle_t spi, uint8_t* buff, size_t buf
   }
 }
 //-------------------------------------------------------------------
-static void TFT9341_SetAddrWindow(spi_device_handle_t spi, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+void TFT9341_SetAddrWindow(spi_device_handle_t spi, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
   // column address set
   lcd_cmd(spi, 0x2A); // CASET

@@ -23,6 +23,7 @@ void lcd_spi_pre_transfer_callback(spi_transaction_t *t);
 void TFT9341_spi_init(void);
 void task_temp(void *params);
 void task_line(void);
+void task_line_move(void);
 void visualize(void);
 //---------------------------------------------------------------------------
 static const char* TAG = "McD";
@@ -31,7 +32,7 @@ float cTemp;
 float temp_water, temp_outside, temp_set;
 char str[26];
 uint8_t rom[9];
-TaskHandle_t task_temp_h, task_line_h;
+TaskHandle_t task_temp_h, task_line_h, task_line_move_h;
 SemaphoreHandle_t spiSemaphore;
 
 typedef struct {
@@ -107,6 +108,7 @@ void app_main(void)
 			NULL, 0, &task_temp_h);
 	xTaskCreate((void*)task_line, "Temp_line", 2048,
 				NULL, 1, &task_line_h);
+
 	vTaskDelete(NULL);
 	while (true) {
 
@@ -176,6 +178,10 @@ void visualize(void)
 	sprintf(str, "20");
 	TFT9341_String(spi, 5, 225, str);
 	TFT9341_SetFont(&Font24);
+	//TFT9341_SetAddrWindow(spi, 100, 100, 300, 200);
+	//TFT9341_FillScreen(spi, TFT9341_RED);
+	//TFT9341_FillRect(spi, 31, 61, 309, 229, TFT9341_BLACK);
+	//vTaskDelay(2000);
 }
 
 void task_temp(void *params)
@@ -222,18 +228,70 @@ void task_line(void)
 				xSemaphoreTake(spiSemaphore, portMAX_DELAY);
 				TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
 						line_arr[i].y1, line_arr[i].x2, line_arr[i].y2);
+				TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
+						line_arr[i].y1 + 1, line_arr[i].x2, line_arr[i].y2 + 1);
+				TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
+						line_arr[i].y1 - 1, line_arr[i].x2, line_arr[i].y2 - 1);
 				xSemaphoreGive(spiSemaphore);
 				pixels = 0;
 				ESP_LOGI(TAG, "%d %d %d %d ", line_arr[i].x1,
 						line_arr[i].y1, line_arr[i].x2,
 						line_arr[i].y2);
-				vTaskDelay(5000 / portTICK_PERIOD_MS);
+				vTaskDelay(500 / portTICK_PERIOD_MS);
 			}
 
 		}
+		break;
 	}
-
+	xTaskCreate((void*) task_line_move, "task_line_move", 1024, NULL, 1, &task_line_move_h);
+	vTaskDelete(NULL);
 }
+
+void task_line_move(void)
+{
+	uint8_t pixels = 0;
+	float decrement;
+	for(;;)
+	{
+		for(int i = 0; i < 55; i++)
+		{
+			line_arr[i].y1 = line_arr[i + 1].y1;
+			line_arr[i].y2 = line_arr[i + 1].y2;
+		}
+		//calc new last line
+		decrement = temp_water;
+		while(decrement > (float)20){
+			decrement -= (float)0.1;
+			pixels++;
+		}
+		line_arr[55].y2 = 230 - pixels;
+		line_arr[55].y1 = line_arr[54].y2;
+
+		pixels = 0;
+		//clear old graph
+		xSemaphoreTake(spiSemaphore, portMAX_DELAY);
+		TFT9341_FillRect(spi, 31, 61, 309, 229, TFT9341_ORANGE);
+		//draw new graph fast
+		for(int i = 0; i < 56; i++)
+		{
+			TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
+					line_arr[i].y1, line_arr[i].x2, line_arr[i].y2);
+			TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
+					line_arr[i].y1 + 1, line_arr[i].x2, line_arr[i].y2 + 1);
+			TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
+					line_arr[i].y1 - 1, line_arr[i].x2, line_arr[i].y2 - 1);
+		}
+		xSemaphoreGive(spiSemaphore);
+		/*TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[55].x1,
+				line_arr[55].y1, line_arr[55].x2, line_arr[55].y2);
+		TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[55].x1,
+				line_arr[55].y1 + 1, line_arr[55].x2, line_arr[55].y2 + 1);
+		TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[55].x1,
+				line_arr[55].y1 - 1, line_arr[55].x2, line_arr[55].y2 - 1);
+		*/
+		vTaskDelay(4500 / portTICK_PERIOD_MS);
+	}  //for ever
+}  //task
 
 //TO DO: debug line task with LOGI
 
