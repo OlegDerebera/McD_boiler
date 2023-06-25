@@ -12,6 +12,7 @@
 #include <driver/spi_master.h>
 #include "esp_log.h"
 #include "esp_err.h"
+#include "driver/ledc.h"
 
 #define TEMP_BUS 22
 #define LED 2
@@ -25,6 +26,7 @@ void task_temp(void *params);
 void task_line(void);
 void task_line_move(void);
 void visualize(void);
+void led_init(void);
 //---------------------------------------------------------------------------
 static const char* TAG = "McD";
 uint8_t dt[9];
@@ -59,7 +61,7 @@ void app_main(void)
 	//Initialization
 
 
-	line_arr[0].x1 = 30;
+	line_arr[0].x1 = 27;
 	for(int i = 0; i < 56; i++){
 		line_arr[i].x2 = (line_arr[i].x1 + 5);
 		line_arr[i + 1].x1 = line_arr[i].x2;
@@ -104,6 +106,7 @@ void app_main(void)
 
 	spiSemaphore = xSemaphoreCreateMutex();
 	visualize();
+	led_init();
 	xTaskCreate((void*)task_temp, "Temp_calc", 2048,
 			NULL, 0, &task_temp_h);
 	xTaskCreate((void*)task_line, "Temp_line", 2048,
@@ -151,6 +154,37 @@ void TFT9341_spi_init(void)
 
 }
 
+void led_init(void)
+{
+	// Configure LEDC peripheral
+	    ledc_timer_config_t ledc_timer = {
+	        .duty_resolution = LEDC_TIMER_13_BIT, // Set duty resolution to 13 bits
+	        .freq_hz = 5000,                      // Set PWM frequency to 5 kHz
+	        .speed_mode = LEDC_HIGH_SPEED_MODE,    // Use high-speed LEDC mode
+	        .timer_num = LEDC_TIMER_0,             // Use timer 0
+	        .clk_cfg = LEDC_APB_CLK,              // Use auto-select clock
+	    };
+	    ledc_timer_config(&ledc_timer);
+
+	    // Configure LEDC channel
+	    ledc_channel_config_t ledc_channel = {
+	        .channel = LEDC_CHANNEL_0,             // Use channel 0
+	        .duty = 0,                             // Initial duty cycle of 0%
+	        .gpio_num = GPIO_NUM_5,                // GPIO pin for PWM output
+	        .speed_mode = LEDC_HIGH_SPEED_MODE,    // Use high-speed LEDC mode
+	        .timer_sel = LEDC_TIMER_0,             // Use timer 0
+	    };
+	    ledc_channel_config(&ledc_channel);
+
+	    // Start PWM generation
+	    ledc_fade_func_install(0);
+	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 1000); // Set duty cycle to 50%
+	    ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
+
+	    // Other application code...
+	}
+
+
 void visualize(void)
 {
 	ds18b20_requestTemperatures();
@@ -170,13 +204,13 @@ void visualize(void)
 	TFT9341_String(spi, 120, 5, str);
 	sprintf(str, "%0.2fC", temp_outside);
 	TFT9341_String(spi, 120, 29, str);
-	TFT9341_DrawRect(spi, TFT9341_BLUE, 30, 60, 310, 230);
+	TFT9341_DrawRect(spi, TFT9341_BLUE, 26, 60, 308, 230);
 
 	TFT9341_SetFont(&Font16);
 	sprintf(str, "40");
-	TFT9341_String(spi, 5, 55, str);
+	TFT9341_String(spi, 2, 55, str);
 	sprintf(str, "20");
-	TFT9341_String(spi, 5, 225, str);
+	TFT9341_String(spi, 2, 225, str);
 	TFT9341_SetFont(&Font24);
 	//TFT9341_SetAddrWindow(spi, 100, 100, 300, 200);
 	//TFT9341_FillScreen(spi, TFT9341_RED);
@@ -270,7 +304,7 @@ void task_line_move(void)
 		pixels = 0;
 		//clear old graph
 		xSemaphoreTake(spiSemaphore, portMAX_DELAY);
-		TFT9341_FillRect(spi, 31, 61, 309, 229, TFT9341_ORANGE);
+		TFT9341_FillRect(spi, 27, 61, 307, 229, TFT9341_ORANGE);
 		//draw new graph fast
 		for(int i = 0; i < 56; i++)
 		{
@@ -293,7 +327,8 @@ void task_line_move(void)
 	}  //for ever
 }  //task
 
-//TO DO: debug line task with LOGI
+//TO DO: debug line task with LOGI		W
+//TO DO: learn PWM output & apply with PID formula
 
 
 
