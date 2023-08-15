@@ -17,8 +17,10 @@ void lcd_cmd(spi_device_handle_t spi, const uint8_t cmd)
     t.length=8;                     //Command is 8 bits
     t.tx_buffer=&cmd;               //The data is the cmd itself
     t.user=(void*)0;                //D/C needs to be set to 0
+    //vTaskSuspendAll();
     ret=spi_device_polling_transmit(spi, &t);  //Transmit!
     assert(ret==ESP_OK);            //Should have had no issues.
+    //xTaskResumeAll();
 }
 //-------------------------------------------------------------------
 void lcd_data(spi_device_handle_t spi, const uint8_t *data, int len)
@@ -30,8 +32,10 @@ void lcd_data(spi_device_handle_t spi, const uint8_t *data, int len)
     t.length=len*8;                 //Len is in bytes, transaction length is in bits.
     t.tx_buffer=data;               //Data
     t.user=(void*)1;                //D/C needs to be set to 1
+    //vTaskSuspendAll();
     ret=spi_device_polling_transmit(spi, &t);  //Transmit!
     assert(ret==ESP_OK);            //Should have had no issues.
+    //xTaskResumeAll();
 }
 //-------------------------------------------------------------------
 void TFT9341_reset(void)
@@ -151,7 +155,7 @@ void TFT9341_FillScreen(spi_device_handle_t spi, uint16_t color)
    heap_caps_free(blck);
 }
 //-------------------------------------------------------------------
-/*void TFT9341_FillRect(spi_device_handle_t spi, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
+void TFT9341_FillRect(spi_device_handle_t spi, uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
 {
   if((x1 >= TFT9341_WIDTH) || (y1 >= TFT9341_HEIGHT) || (x2 >= TFT9341_WIDTH) || (y2 >= TFT9341_HEIGHT)) return;
   if(x1>x2) swap(x1,x2);
@@ -197,7 +201,7 @@ void TFT9341_FillScreen(spi_device_handle_t spi, uint16_t color)
     }
   }
   heap_caps_free(blck);
-}*/
+}
 //-------------------------------------------------------------------
 static void TFT9341_WriteData(spi_device_handle_t spi, uint8_t* buff, size_t buff_size) {
   esp_err_t ret;
@@ -216,7 +220,7 @@ static void TFT9341_WriteData(spi_device_handle_t spi, uint8_t* buff, size_t buf
   }
 }
 //-------------------------------------------------------------------
-static void TFT9341_SetAddrWindow(spi_device_handle_t spi, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+void TFT9341_SetAddrWindow(spi_device_handle_t spi, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
   // column address set
   lcd_cmd(spi, 0x2A); // CASET
