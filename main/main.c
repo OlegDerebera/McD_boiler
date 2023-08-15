@@ -13,6 +13,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "driver/ledc.h"
+#include "driver/dac.h"
 
 #define TEMP_BUS 22
 #define LED 2
@@ -25,6 +26,8 @@ void TFT9341_spi_init(void);
 void task_temp(void *params);
 void task_line(void);
 void task_line_move(void);
+void task_visualize(void);
+void task_menu(void);
 void visualize(void);
 void led_init(void);
 //---------------------------------------------------------------------------
@@ -32,9 +35,10 @@ static const char* TAG = "McD";
 uint8_t dt[9];
 float cTemp;
 float temp_water, temp_outside, temp_set;
-char str[26];
+char str_water[26], str_outside[26];
 uint8_t rom[9];
-TaskHandle_t task_temp_h, task_line_h, task_line_move_h;
+TaskHandle_t task_temp_h, task_line_h, task_line_move_h,
+task_visualize_h, task_menu_h, task_h;
 SemaphoreHandle_t spiSemaphore;
 
 typedef struct {
@@ -49,14 +53,51 @@ line_t line_arr[56];
 uint8_t rom_blue[8] = {0x28, 0xc5, 0xc4, 0x7, 0xd6, 0x1, 0x3c, 0xc0};
 uint8_t rom_black[8] = {0x28, 0x3b, 0xe5, 0x7, 0xd6, 0x1, 0x3c, 0x94};
 
+QueueHandle_t queue = NULL;
+uint32_t buf[5];
 //---------------------------------------------
+static void IRAM_ATTR gpio_isr_menu(void* arg)
+{
+	//if(xSemaphoreTake(spiSemaphore, portMAX_DELAY)){
+	//spi_device_abort_trans();
 
+	vTaskSuspend(task_line_h);
+	//vTaskSuspend(task_visualize_h);
+	//vTaskResume(task_menu_h);
+	xQueueSendFromISR(queue, buf, NULL);
+	//}
+}
+
+void task(void)//0
+{
+	for(;;)
+	{
+		if(xQueueReceive(queue, buf, portMAX_DELAY)){
+			xSemaphoreTake(spiSemaphore, portMAX_DELAY);
+			TFT9341_FillRect(spi, 0, 0, 160, 120, TFT9341_BLUE);
+			//vTaskDelay(500 / portTICK_PERIOD_MS);
+			TFT9341_FillRect(spi, 120, 0, 320, 240, TFT9341_WHITE);
+			//vTaskDelay(500 / portTICK_PERIOD_MS);
+			TFT9341_FillRect(spi, 0, 120, 160, 240, TFT9341_RED);
+				//vTaskDelay(500 / portTICK_PERIOD_MS);
+				TFT9341_FillRect(spi, 120, 160, 320, 240, TFT9341_GREEN_2);
+					//vTaskDelay(500 / portTICK_PERIOD_MS);
+				xSemaphoreGive(spiSemaphore);
+				visualize();
+				vTaskResume(task_line_h);
+		}
+	}
+}
 
 void app_main(void)
 {
 	//off fucking stereo
 	gpio_set_direction(25, GPIO_MODE_OUTPUT);
 	gpio_set_level(25, 0);
+
+	dac_output_enable(DAC_CHANNEL_2);
+	dac_output_voltage(DAC_CHANNEL_2, 2);
+	//535, 220 omh res
 	//Intro animation
 	//Initialization
 
@@ -106,9 +147,28 @@ void app_main(void)
 
 	spiSemaphore = xSemaphoreCreateMutex();
 	visualize();
+	//buttons interrupt init
+	xTaskCreate((void*)task_menu, "task_menu", 2048, NULL,
+			0, &task_menu_h);
+	xTaskCreate((void*)task, "task", 2048, NULL,
+			0, &task_h);
+	vTaskSuspend(task_menu_h);
+
+	gpio_config_t gpio_intrpt;
+	gpio_intrpt.intr_type = GPIO_INTR_NEGEDGE;
+	gpio_intrpt.mode = GPIO_MODE_INPUT;
+	gpio_intrpt.pin_bit_mask = 1ULL << GPIO_NUM_38;
+	gpio_intrpt.pull_down_en = GPIO_PULLDOWN_DISABLE;
+	gpio_intrpt.pull_up_en = GPIO_PULLUP_DISABLE;
+	gpio_config(&gpio_intrpt);
+
+	gpio_install_isr_service(0);
+	gpio_isr_handler_add(GPIO_NUM_38, gpio_isr_menu, NULL);
+
+	queue = xQueueCreate(5, sizeof(32));
 	led_init();
-	xTaskCreate((void*)task_temp, "Temp_calc", 2048,
-			NULL, 0, &task_temp_h);
+	//xTaskCreate((void*)task_temp, "Temp_calc", 2048,
+			//NULL, 0, &task_temp_h);
 	xTaskCreate((void*)task_line, "Temp_line", 2048,
 				NULL, 1, &task_line_h);
 
@@ -116,7 +176,7 @@ void app_main(void)
 	while (true) {
 
     }
-}
+}//main
 
 void lcd_spi_pre_transfer_callback(spi_transaction_t *t)
 {
@@ -141,10 +201,10 @@ void TFT9341_spi_init(void)
 	  ret = spi_bus_initialize(HSPI_HOST, &cfg, SPI_DMA_CH_AUTO);
 	  //ESP_LOGI(TAG, "spi bus initialize: %d", ret);
 	  spi_device_interface_config_t devcfg={
-	        .clock_speed_hz=10*1000*1000,           //Clock out at 10 MHz
+	        .clock_speed_hz=30*1000*1000,           //Clock out at 10 MHz
 	        .mode=0,                                //SPI mode 0
 	        .spics_io_num=CONFIG_PIN_NUM_CS,               //CS pin
-	        .queue_size=7,                          //We want to be able to queue 7 transactions at a time
+	        .queue_size=20,                          //We want to be able to queue 7 transactions at a time
 	        .pre_cb=lcd_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line
 	  };
 	  ret=spi_bus_add_device(HSPI_HOST, &devcfg, &spi);
@@ -159,7 +219,7 @@ void led_init(void)
 	// Configure LEDC peripheral
 	    ledc_timer_config_t ledc_timer = {
 	        .duty_resolution = LEDC_TIMER_13_BIT, // Set duty resolution to 13 bits
-	        .freq_hz = 5000,                      // Set PWM frequency to 5 kHz
+	        .freq_hz = 7000,                      // Set PWM frequency to 5 kHz
 	        .speed_mode = LEDC_HIGH_SPEED_MODE,    // Use high-speed LEDC mode
 	        .timer_num = LEDC_TIMER_0,             // Use timer 0
 	        .clk_cfg = LEDC_APB_CLK,              // Use auto-select clock
@@ -178,9 +238,9 @@ void led_init(void)
 
 	    // Start PWM generation
 	    ledc_fade_func_install(0);
-	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 1000); // Set duty cycle to 50%
+	    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 4096); // Set duty cycle to 50%
 	    ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
-
+	    // 2200 Omh 20uF RC or 9150 omh
 	    // Other application code...
 	}
 
@@ -194,23 +254,23 @@ void visualize(void)
 	TFT9341_SetFont(&Font24);
 
 	temp_water = ds18b20_get_temp(MATCH_ROM, rom_black);
-	sprintf(str, "Water");
-	TFT9341_String(spi, 10, 5, str);
-	sprintf(str, "%0.2fC", temp_water);
-	TFT9341_String(spi, 10, 29, str);
+	sprintf(str_water, "Water");
+	TFT9341_String(spi, 10, 5, str_water);
+	sprintf(str_water, "%0.2fC", temp_water);
+	TFT9341_String(spi, 10, 29, str_water);
 
 	temp_outside = ds18b20_get_temp(MATCH_ROM, rom_blue);
-	sprintf(str, "Outside");
-	TFT9341_String(spi, 120, 5, str);
-	sprintf(str, "%0.2fC", temp_outside);
-	TFT9341_String(spi, 120, 29, str);
+	sprintf(str_outside, "Outside");
+	TFT9341_String(spi, 120, 5, str_outside);
+	sprintf(str_outside, "%0.2fC", temp_outside);
+	TFT9341_String(spi, 120, 29, str_outside);
 	TFT9341_DrawRect(spi, TFT9341_BLUE, 26, 60, 308, 230);
 
 	TFT9341_SetFont(&Font16);
-	sprintf(str, "40");
-	TFT9341_String(spi, 2, 55, str);
-	sprintf(str, "20");
-	TFT9341_String(spi, 2, 225, str);
+	sprintf(str_water, "40");
+	TFT9341_String(spi, 2, 55, str_water);
+	sprintf(str_water, "20");
+	TFT9341_String(spi, 2, 225, str_water);
 	TFT9341_SetFont(&Font24);
 	//TFT9341_SetAddrWindow(spi, 100, 100, 300, 200);
 	//TFT9341_FillScreen(spi, TFT9341_RED);
@@ -218,7 +278,7 @@ void visualize(void)
 	//vTaskDelay(2000);
 }
 
-void task_temp(void *params)
+void task_temp(void *params)// 0
 {
 	//PID
 
@@ -227,17 +287,19 @@ void task_temp(void *params)
 		ds18b20_requestTemperatures();
 		temp_water = ds18b20_get_temp(MATCH_ROM, rom_black);
 		temp_outside = ds18b20_get_temp(MATCH_ROM, rom_blue);
-		sprintf(str, "%0.2fC", temp_water);
-		xSemaphoreTake(spiSemaphore, portMAX_DELAY);
+		sprintf(str_water, "%0.2fC", temp_water);
+		sprintf(str_outside, "%0.2fC", temp_outside);
+		xTaskNotifyGive(task_visualize_h);
+		/*xSemaphoreTake(spiSemaphore, portMAX_DELAY);
 		TFT9341_String(spi, 10, 29, str);
 
 		sprintf(str, "%0.2fC", temp_outside);
 		TFT9341_String(spi, 120, 29, str);
-		xSemaphoreGive(spiSemaphore);
+		xSemaphoreGive(spiSemaphore);*/
 	}
 }
 
-void task_line(void)
+void task_line(void)//1
 {
 	uint8_t pixels = 0;
 	float decrement = temp_water;
@@ -252,6 +314,16 @@ void task_line(void)
 	{
 		for(uint8_t i = 0; i < 56; i++){
 			if(temp_water > 19 && temp_water < 38){
+				ds18b20_requestTemperatures();
+				temp_water = ds18b20_get_temp(MATCH_ROM, rom_black);
+				temp_outside = ds18b20_get_temp(MATCH_ROM, rom_blue);
+				sprintf(str_water, "%0.2fC", temp_water);
+				sprintf(str_outside, "%0.2fC", temp_outside);
+				xSemaphoreTake(spiSemaphore, portMAX_DELAY);
+				TFT9341_String(spi, 10, 29, str_water);
+				TFT9341_String(spi, 120, 29, str_outside);
+				xSemaphoreGive(spiSemaphore);
+
 				decrement = temp_water;
 				while(decrement > (float)20){
 					decrement -= (float)0.1;
@@ -271,22 +343,63 @@ void task_line(void)
 				ESP_LOGI(TAG, "%d %d %d %d ", line_arr[i].x1,
 						line_arr[i].y1, line_arr[i].x2,
 						line_arr[i].y2);
-				vTaskDelay(500 / portTICK_PERIOD_MS);
+				//vTaskDelay(500 / portTICK_PERIOD_MS);
 			}
 
 		}
 		break;
 	}
-	xTaskCreate((void*) task_line_move, "task_line_move", 1024, NULL, 1, &task_line_move_h);
+	xTaskCreate((void*)task_temp, "Temp_calc", 2048,
+					NULL, 0, &task_temp_h);
+	xTaskCreate((void*) task_line_move, "task_line_move", 2048,
+			NULL, 0, &task_line_move_h);
+	xTaskCreate((void*) task_visualize, "task_visualize", 2048,
+			NULL, 1, &task_visualize_h);
+
 	vTaskDelete(NULL);
 }
 
-void task_line_move(void)
+void task_visualize(void)//1
+{
+	//TickType_t xLastWakeTime;
+	//const TickType_t xFrequency = 1000;
+
+	     // Initialise the xLastWakeTime variable with the current time.
+	//xLastWakeTime = xTaskGetTickCount();
+	for(;;){
+		for(int i = 0; i < 5; i++){
+			ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+			xSemaphoreTake(spiSemaphore, portMAX_DELAY);
+			TFT9341_String(spi, 10, 29, str_water);
+			TFT9341_String(spi, 120, 29, str_outside);
+			xSemaphoreGive(spiSemaphore);
+			//vTaskDelay(750 / portTICK_PERIOD_MS);
+			//vTaskDelayUntil( &xLastWakeTime, xFrequency );
+		}
+		xSemaphoreTake(spiSemaphore, portMAX_DELAY);
+		TFT9341_FillRect(spi, 27, 61, 307, 229, TFT9341_ORANGE);
+		//draw new graph fast
+		for(int i = 0; i < 56; i++)
+		{
+			TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
+					line_arr[i].y1, line_arr[i].x2, line_arr[i].y2);
+			TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
+					line_arr[i].y1 + 1, line_arr[i].x2, line_arr[i].y2 + 1);
+			TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
+					line_arr[i].y1 - 1, line_arr[i].x2, line_arr[i].y2 - 1);
+		}
+		xSemaphoreGive(spiSemaphore);
+		xTaskNotifyGive(task_line_move_h);
+	}
+}
+
+void task_line_move(void)//0
 {
 	uint8_t pixels = 0;
 	float decrement;
 	for(;;)
 	{
+		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 		for(int i = 0; i < 55; i++)
 		{
 			line_arr[i].y1 = line_arr[i + 1].y1;
@@ -303,7 +416,7 @@ void task_line_move(void)
 
 		pixels = 0;
 		//clear old graph
-		xSemaphoreTake(spiSemaphore, portMAX_DELAY);
+		/*xSemaphoreTake(spiSemaphore, portMAX_DELAY);
 		TFT9341_FillRect(spi, 27, 61, 307, 229, TFT9341_ORANGE);
 		//draw new graph fast
 		for(int i = 0; i < 56; i++)
@@ -315,7 +428,7 @@ void task_line_move(void)
 			TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[i].x1,
 					line_arr[i].y1 - 1, line_arr[i].x2, line_arr[i].y2 - 1);
 		}
-		xSemaphoreGive(spiSemaphore);
+		xSemaphoreGive(spiSemaphore);*/
 		/*TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[55].x1,
 				line_arr[55].y1, line_arr[55].x2, line_arr[55].y2);
 		TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[55].x1,
@@ -323,16 +436,23 @@ void task_line_move(void)
 		TFT9341_DrawLine(spi, TFT9341_GREEN_2, line_arr[55].x1,
 				line_arr[55].y1 - 1, line_arr[55].x2, line_arr[55].y2 - 1);
 		*/
-		vTaskDelay(4500 / portTICK_PERIOD_MS);
+		//vTaskDelay(4500 / portTICK_PERIOD_MS);
 	}  //for ever
 }  //task
 
+void task_menu(void)//0
+{
+	TFT9341_FillRect(spi, 0, 0, 160, 120, TFT9341_BLUE);
+	//vTaskDelay(500 / portTICK_PERIOD_MS);
+	TFT9341_FillRect(spi, 120, 0, 320, 240, TFT9341_WHITE);
+		//vTaskDelay(500 / portTICK_PERIOD_MS);
+		TFT9341_FillRect(spi, 0, 120, 160, 240, TFT9341_RED);
+			//vTaskDelay(500 / portTICK_PERIOD_MS);
+			TFT9341_FillRect(spi, 120, 160, 320, 240, TFT9341_GREEN_2);
+				//vTaskDelay(500 / portTICK_PERIOD_MS);
+}
 //TO DO: debug line task with LOGI		W
 //TO DO: learn PWM output & apply with PID formula
-
-
-
-
 
 
 
